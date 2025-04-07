@@ -39,7 +39,7 @@ public:
                 logFile.close();
                 m_mtx.unlock();
             }
-            std::cout << "log success" << std::endl;
+            //std::cout << "log success" << std::endl;
         }
         else {
             std::cerr << "Can't open: " << filename << std::endl;

@@ -101,7 +101,7 @@
             cursor: pointer;
         }
 
-        /* 视频播放器样式 */
+        /* 新增视频播放器样式 */
         #videoPlayer {
             display: none;
             margin-top: 30px;
@@ -112,60 +112,6 @@
         #videoElement {
             width: 100%;
             border-radius: 5px;
-        }
-
-        /* 文件上传区域样式 */
-        #uploadSection {
-            margin-top: 20px;
-            padding: 20px;
-            border: 2px dashed #007BFF;
-            border-radius: 5px;
-            background-color: #f8f9fa;
-        }
-
-        #fileInput {
-            display: none;
-        }
-
-        #fileLabel {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #28a745;
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-bottom: 10px;
-        }
-
-        #fileLabel:hover {
-            background-color: #218838;
-        }
-
-        #fileName {
-            margin-top: 10px;
-            color: #333;
-        }
-
-        #uploadStatus {
-            margin-top: 10px;
-            color: #dc3545;
-            font-weight: bold;
-        }
-
-        .progress-container {
-            width: 100%;
-            background-color: #e9ecef;
-            border-radius: 5px;
-            margin-top: 10px;
-            display: none;
-        }
-
-        #uploadProgress {
-            width: 0%;
-            height: 20px;
-            background-color: #28a745;
-            border-radius: 5px;
-            transition: width 0.3s;
         }
     </style>
     <!-- 引入Markdown解析库 -->
@@ -182,26 +128,13 @@
         <button id="viewVideoBtn" class="btn">观看视频</button>
         <a href="#" class="btn">了解更多</a>
         
-        <!-- 文件上传区域 -->
-        <div id="uploadSection">
-            <h3>文件上传</h3>
-            <input type="file" id="fileInput">
-            <label for="fileInput" id="fileLabel">选择文件</label>
-            <div id="fileName">未选择文件</div>
-            <button id="uploadBtn" class="btn" style="background-color: #28a745;" disabled>上传文件</button>
-            <div id="uploadStatus"></div>
-            <div class="progress-container" id="progressContainer">
-                <div id="uploadProgress"></div>
-            </div>
-        </div>
-
         <!-- 文档查看器 -->
         <div id="docViewer">
             <button class="close-btn" id="closeDocBtn">×</button>
             <div id="docContent"></div>
         </div>
 
-        <!-- 视频播放器 -->
+        <!-- 新增视频播放器 -->
         <div id="videoPlayer">
             <video id="videoElement" controls>
                 您的浏览器不支持HTML5视频
@@ -219,15 +152,6 @@
             const closeDocBtn = document.getElementById('closeDocBtn');
             const videoPlayer = document.getElementById('videoPlayer');
             const videoElement = document.getElementById('videoElement');
-            
-            // 文件上传相关元素
-            const fileInput = document.getElementById('fileInput');
-            const fileLabel = document.getElementById('fileLabel');
-            const fileName = document.getElementById('fileName');
-            const uploadBtn = document.getElementById('uploadBtn');
-            const uploadStatus = document.getElementById('uploadStatus');
-            const progressContainer = document.getElementById('progressContainer');
-            const uploadProgress = document.getElementById('uploadProgress');
 
             // 下载文件功能
             downloadBtn.addEventListener('click', function () {
@@ -300,82 +224,6 @@
             closeDocBtn.addEventListener('click', function() {
                 docViewer.style.display = 'none';
             });
-
-            // 文件选择处理
-            fileInput.addEventListener('change', function() {
-                if (this.files && this.files[0]) {
-                    fileName.textContent = `已选择: ${this.files[0].name} (${formatFileSize(this.files[0].size)})`;
-                    uploadBtn.disabled = false;
-                    uploadStatus.textContent = '';
-                } else {
-                    fileName.textContent = '未选择文件';
-                    uploadBtn.disabled = true;
-                }
-            });
-
-            // 文件上传功能
-            uploadBtn.addEventListener('click', function() {
-                if (!fileInput.files || fileInput.files.length === 0) {
-                    uploadStatus.textContent = '请先选择文件';
-                    return;
-                }
-
-                const file = fileInput.files[0];
-                const formData = new FormData();
-                formData.append('file', file);
-
-                // 显示进度条
-                progressContainer.style.display = 'block';
-                uploadProgress.style.width = '0%';
-                uploadStatus.textContent = '上传中...';
-                uploadBtn.disabled = true;
-
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', 'http://192.168.29.133:39333/uploads', true);
-                xhr.withCredentials = true;
-
-                // 上传进度事件
-                xhr.upload.onprogress = function(e) {
-                    if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        uploadProgress.style.width = percent + '%';
-                    }
-                };
-
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        uploadStatus.textContent = '上传成功!';
-                        uploadStatus.style.color = '#28a745';
-                        setTimeout(() => {
-                            progressContainer.style.display = 'none';
-                            uploadBtn.disabled = false;
-                            fileInput.value = '';
-                            fileName.textContent = '未选择文件';
-                        }, 2000);
-                    } else {
-                        uploadStatus.textContent = '上传失败: ' + xhr.statusText;
-                        uploadStatus.style.color = '#dc3545';
-                        uploadBtn.disabled = false;
-                    }
-                };
-
-                xhr.onerror = function() {
-                    uploadStatus.textContent = '上传出错，请检查网络连接';
-                    uploadStatus.style.color = '#dc3545';
-                    uploadBtn.disabled = false;
-                };
-
-                xhr.send(formData);
-            });
-
-            // 格式化文件大小
-            function formatFileSize(bytes) {
-                if (bytes === 0) return '0 Bytes';
-                const k = 1024;
-                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            }
         });
     </script>
 </body>

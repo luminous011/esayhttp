@@ -1,12 +1,12 @@
 targets = server
-sources = server.cpp sqlconn.cpp http.cpp
-objects = server.o sqlconn.o	http.o
+sources = sqlconn.cpp http.cpp server.cpp
+objects = sqlconn.o	http.o server.o
 
 $(targets): $(objects)
-	g++ $(objects) -o $@ -lmysqlclient -lz
+	g++ $(objects) -o $@ -lmysqlclient -lz -lssl -lcrypto
 
 %.o: %.cpp
 	g++ -c $< -o $@
 
 clean:
-	rm -f $(objects) server
+	rm -f $(objects) $(targets)
