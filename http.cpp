@@ -6,8 +6,7 @@
 #include <string.h>
 #include <zlib.h>
 #include <vector>
-#include <nlohmann/json.hpp>
-#include <sys/stat.h>
+
 
 #define BUFSIZE 8192
 
@@ -176,6 +175,80 @@ bool verifySignedCookie(const std::string& cookie) {
 //     inflateEnd(&strm);
 //     return true;
 // }
+
+bool gzipCompressFile(const std::string& filename) {
+    // 读取原始文件
+    std::ifstream in_file(filename, std::ios::binary | std::ios::ate);
+    if (!in_file) {
+        std::cerr << "Error opening input file: " << filename << std::endl;
+        return false;
+    }
+    
+    const size_t file_size = in_file.tellg();
+    in_file.seekg(0);
+    
+    std::vector<char> input(file_size);
+    if (!in_file.read(input.data(), file_size)) {
+        std::cerr << "Error reading input file" << std::endl;
+        return false;
+    }
+    in_file.close();
+
+    // 准备压缩
+    z_stream strm = {};
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+
+    if (deflateInit2(&strm, Z_BEST_COMPRESSION, Z_DEFLATED,
+                   16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        std::cerr << "Compression initialization failed" << std::endl;
+        return false;
+    }
+
+    // 动态输出缓冲区
+    size_t out_capacity = compressBound(file_size);
+    std::vector<char> output(out_capacity);
+    
+    strm.next_in = reinterpret_cast<Bytef*>(input.data());
+    strm.avail_in = input.size();
+    strm.next_out = reinterpret_cast<Bytef*>(output.data());
+    strm.avail_out = output.size();
+
+    int ret = Z_OK;
+    do {
+        ret = deflate(&strm, Z_FINISH);
+        
+        // 处理缓冲区扩容
+        if (ret == Z_BUF_ERROR || strm.avail_out == 0) {
+            const size_t old_size = output.size();
+            output.resize(old_size * 2);
+            strm.next_out = reinterpret_cast<Bytef*>(output.data() + old_size);
+            strm.avail_out = output.size() - old_size;
+        }
+    } while (ret == Z_BUF_ERROR || (ret == Z_OK && strm.avail_out == 0));
+
+    // 验证压缩结果
+    if (ret != Z_STREAM_END) {
+        std::cerr << "Compression failed: " << ret << std::endl;
+        deflateEnd(&strm);
+        return false;
+    }
+
+    // 写入压缩文件
+    const std::string out_filename = filename + ".gz";
+    std::ofstream out_file(out_filename, std::ios::binary);
+    if (!out_file.write(output.data(), strm.total_out)) {
+        std::cerr << "Error writing output file" << std::endl;
+        deflateEnd(&strm);
+        return false;
+    }
+    
+    deflateEnd(&strm);
+    std::cout << "Successfully compressed to: " << out_filename 
+              << " (" << strm.total_out << " bytes)" << std::endl;
+    return true;
+}
 bool gzipCompress(const char* input, size_t inputSize, char*& output, size_t& outputSize) 
 {
     z_stream strm;
@@ -252,12 +325,54 @@ bool gzipDecompress(const char* input, size_t inputSize, char*& output, size_t& 
     return true;
 }
 
+// 修改prase方法中的文件上传部分
+bool HTTP::prase(char* buf, int fd)
+{    
+    // string req;
+    // req.append(buf);
 
-void HTTP::prase(char* buf)
-{
-    if (buf == nullptr) {
-        return;
-    }
+    // // 文件上传处理
+    // if(req.find("POST") != std::string::npos && req.find("/uploads") != std::string::npos)
+    // {
+    //     int content_size = get_content_length(buf);
+    //     if(content_size <= 0) {
+    //         std::cerr << "Invalid Content-Length" << std::endl;
+    //         return false;
+    //     }
+
+    //     std::string boundary = get_boundary(buf);
+    //     if(boundary.empty()) {
+    //         std::cerr << "Failed to find boundary" << std::endl;
+    //         return false;
+    //     }
+
+    //     std::string filename = get_upload_file_name(buf);
+    //     if(filename.empty()) {
+    //         std::cerr << "Failed to get filename" << std::endl;
+    //         return false;
+    //     }
+
+    //     // 创建上传目录(如果不存在)
+    //     if(mkdir("uploads", 0755) != 0 && errno != EEXIST) {
+    //         std::cerr << "Failed to create uploads directory: " << strerror(errno) << std::endl;
+    //         return false;
+    //     }
+
+    //     filename = "uploads/" + filename;
+        
+    //     // 获取初始内容
+    //     std::string content = get_file_content(buf);
+        
+    //     // 保存文件
+    //     if(!save_large_file(fd, boundary, filename, content_size, content))
+    //     {
+    //         std::cerr << "Failed to save file" << std::endl;
+    //         return false;
+    //     }
+        
+    //     std::cout << "File saved: " << filename << " (" << content_size << " bytes)" << std::endl;
+    //     return true;
+    // }
 
     char* token = strtok(buf, "\r\n");
     if (token != nullptr) {
@@ -285,11 +400,14 @@ void HTTP::prase(char* buf)
         else
         {
             content = headerLine;//something error
+            std::cout << "___________________" << std::endl;
+            std::cout << headerLine << std::endl;
             break;
         }
         token = strtok(nullptr, "\r\n");
         i++;
     }
+    return false;
 }
 
 bool HTTP::is_upload()
@@ -344,9 +462,17 @@ void HTTP::prase_url() {
     this->url = decodedUrl;
 }
 
+void HTTP::return_res_ok(char* buf)
+{
+    std::string response_header = "HTTP/1.1 200 OK\r\n"
+    "Content-Type: application/json\r\n"
+    "Connection: keep-alive\r\n" 
+    "Content-Length: 27\r\n\r\n"
+    "{\"status\":\"upload success\"}";
+    std::copy(response_header.begin(), response_header.end(), buf);
+}
 
-
-void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
+void HTTP::return_res(char* buf, std::string& filename, bool keep_alive, int fd)
 {
     is_cache = true;
     is_gzip = false;
@@ -398,7 +524,7 @@ void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
                 is_gzip = false;
         }
     }
-    if(method == "GET")
+    if(method == "GET" || method == "HEAD")
     {   
         if(url == "")
         {
@@ -426,10 +552,17 @@ void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
             text_type = Type::MARKDOWN;
         }
         filename = url;
-        if(is_gzip && url == "login.html")
+        if(method == "GET" && is_gzip && url == "login.html" || url == "welcome.html" || url == "favicon.ico")
         {
+            std::string orignal_file = url;
             filename += ".gz";
+
             struct stat stat_buf;
+            bool gzip_exists = (stat(filename.c_str(), &stat_buf) == 0);
+            if(!gzip_exists)
+            {
+                gzipCompressFile(orignal_file);
+            }
             int rc = stat(filename.c_str(), &stat_buf);
             if (rc == 0) 
             {
@@ -468,24 +601,6 @@ void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
             }
         }
         
-        // std::ifstream file(url, std::ios::binary | std::ios::ate);
-        // if (file) {
-        //     buffer.clear();
-        //     text_len= file.tellg(); 
-        //     file.seekg(0, std::ios::beg);
-        //     buffer.resize(text_len);
-        //     file.read(buffer.data(), text_len); 
-        //     file.close();
-        //     http_code = Code::OK;
-        //     is_file = true;
-        //     is_content = false;
-        // } else {
-        //     http_code = Code::Not_Found;
-        //     text_type = Type::PLAIN;
-        //     is_content = true;
-        //     is_file = false;
-        //     text_len = sizeof("Your Request Error!!!") - 1; 
-        // }
     }
     else if(method == "POST")
     {
@@ -493,7 +608,7 @@ void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
         std::cout << "url " << url << std::endl;
         if(url == "uploads")
         {
-            //std::cout << "content " << content << endl;
+            std::cout << "content " << content << endl;
             
             std::string response_header = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
             std::vector<char> response;
@@ -583,12 +698,6 @@ void HTTP::return_res(char* buf, std::string& filename, bool keep_alive)
         }
             //else if(){} etc..
     }
-    else if(method == "HEAD")
-    {
-        http_code = Code::OK;
-        is_content = false;
-        is_file = false;
-    }
     else
     {
         is_file = false;
@@ -610,6 +719,17 @@ PRASE:
     //add line
     response_header += version + " " + code_num + " " + code_text + "\r\n";
     //add header
+
+    if(method == "HEAD")
+    {
+        is_file = false;
+        is_content = true;
+        is_download = false;
+        filename = "";
+        buffer.clear();
+        text_type = Type::PLAIN;
+    }
+
     if(!is_cache)
     {
         response_header += "Cache-Control: no-cache, no-store, must-revalidate\r\n";
@@ -654,7 +774,7 @@ PRASE:
     {
         response_header += "Connection: Close\r\n";
     }
-    if(is_gzip && url == "login.html")
+    if(is_gzip && url == "login.html" || url == "welcome.html" || url == "favicon.ico")
     {
         response_header += "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n";
     }
@@ -665,6 +785,9 @@ PRASE:
         response_header += cookie;
         response_header += "\r\n";
     }   
+
+    const string sstr = "Server: WangYunKai-Baoshuo\r\n";
+    response_header += sstr;
     //todo gzip
 
     //add content
@@ -713,247 +836,4 @@ PRASE:
     }
 }
 
-
-// void HTTP::return_res(char* buf, std::string& filename) 
-// {
-//     bool is_have_content = false;
-//     bool is_file_send = false;
-//     bool is_need_cache = true;
-//     bool is_location = false;
-//     std::string location;
-//     std::vector<char> buffer; 
-//     std::string http_code;
-//     std::string code_text;
-//     size_t text_l = 0;
-
-//     auto acceptEncodingIt = m_map.find("Accept-Encoding");
-//     bool canGzip = acceptEncodingIt != m_map.end() && acceptEncodingIt->second.find("gzip") != std::string::npos;
-
-//     if (method == "GET") 
-//     {
-//         auto it = m_map.find("Accept");
-//         if (it == m_map.end()) 
-//         {
-//             http_code = "400";
-//             code_text = "Bad Request";
-//         }
-
-//         url.erase(url.begin());
-//         std::cout << url << std::endl;
-//         if (url.empty())
-//             url = "zhuye.html";
-//         if(url.find("favicon.ico") != std::string::npos)
-//             url = "favicon.png";
-//         if(url.find("download") != std::string::npos)
-//             url = "star.png";
-//         filename = url;
-//         std::ifstream file(url, std::ios::binary | std::ios::ate);
-//         if (file) {
-//             buffer.clear();
-//             text_l = file.tellg(); 
-//            file.seekg(0, std::ios::beg);
-//             buffer.resize(text_l);
-//             file.read(buffer.data(), text_l); 
-//             file.close();
-
-//             http_code = "200";
-//             code_text = "OK";
-//             is_have_content = true;
-//             is_file_send = true;
-//             if (url == "favicon.png" || url == "star.png") {
-//                 is_need_cache = false;
-//                 accept = "image/png";
-//             } else {
-//                 accept = "text/html";
-//             }
-//         } else {
-//             http_code = "404";
-//             code_text = "Not Found";
-//             accept = "text/plain";
-//             text_l = sizeof("Your Request Error!!!") - 1; 
-//         }
-//     } 
-//     else if (method == "POST") 
-//     {
-//         int end = content.find('}');
-//         content = content.substr(0, end+1);
-//         url.erase(url.begin());//url == login/register
-//         if (content.empty()) {
-//             std::cerr << "错误：输入的 JSON 字符串为空，无法解析。" << std::endl;
-//             return;
-//         }
-//         std::string username;
-//         std::string password;
-//         try {
-//             nlohmann::json j = nlohmann::json::parse(content);
-//             username = j["username"];
-//             password = j["password"];
-//             std::cout << "user: " << username << std::endl;
-//             std::cout << "pw: " << password << std::endl;
-//         } catch (const nlohmann::json::parse_error& e) {
-//             std::cerr << "JSON 解析错误: " << e.what() << std::endl;
-//             return;
-//         }
-//         外部调用 username 和 password 做登录验证
-//         if(url == "login")
-//         {
-//             std::string res = is_user_true(username, password);
-//             std::cout << res << std::endl;
-
-//             if (res == "login success") 
-//             {
-//                 http_code = "302";
-//                 code_text = "Found";
-//                 is_have_content = false;
-//                 is_file_send = false;
-//                 text_l = 0;
-//                 is_location = true;
-//                 location = "/welcome.html";
-//             }
-//             else 
-//             {
-//                 http_code = "401";
-//                 code_text = "Unauthorized";
-//                 is_have_content = true;
-//                 accept = "application/json";
-//                 const std::string error_msg = "{\"error\": \"Login failed\"}";
-//                 buffer.assign(error_msg.begin(), error_msg.end());
-//                 text_l = error_msg.size();
-//             }
-//         }
-//         if(url == "register")
-//         {
-//             std::string res = is_register_true(username, password);
-//             std::cout << res << std::endl;
-//             if(res == "success")//register
-//             {
-//                 http_code = "200";
-//                 code_text = "OK";
-//                 is_have_content = true;
-//                 accept = "text/html";
-//                 buffer.clear();
-//                 const std::string bstr = "Register success!";//something error in welcome.html
-//                 buffer.resize(bstr.size());
-//                 text_l = bstr.size();
-//                 std::copy(bstr.begin(), bstr.end(), buffer.begin());
-//             }
-//             else//user has exits
-//             {
-//                 http_code = "409";
-//                 code_text = "Conflict";
-//                 is_have_content = true;
-//                 accept = "text/html";
-//                 buffer.clear();
-//                 const std::string bstr = "Register success!";
-//                 text_l = bstr.size();
-//                 buffer.resize(bstr.size());
-//                 std::copy(bstr.begin(), bstr.end(), buffer.begin());
-//             }
-//         }   
-//     } 
-//     else if (method == "HEAD")
-//     {
-//         http_code = "200";
-//         code_text = "OK";
-//         is_have_content = false;
-//     } 
-//     else 
-//     {
-//         http_code = "405";
-//         code_text = "Method Not Allowed";
-//         accept = "text/plain";
-//         text_l = sizeof("Your Request Error!!!") - 1; 
-//     }
-//     std::cout << http_code << " " << code_text << std::endl;
-//     std::string response_header;
-//     response_header += version;
-//     response_header += " ";
-//     response_header += http_code;
-//     response_header += " ";
-//     response_header += code_text;
-//     response_header += "\r\n";
-//     if(!is_need_cache)
-//     {
-//         response_header += "Cache-Control: no-cache, no-store, must-revalidate\r\n";
-//         response_header += "Expires: 0\r\n";
-//     }
-//     if(url == "star.png")
-//     {
-        
-//         response_header += "Content-Disposition: attachment; filename=star.png\r\n";
-//     }
-//     if (accept == "text/html") {
-//         response_header += "Content-Type: text/html; charset=utf-8\r\n";
-//     } else if (accept == "application/json") {
-//         response_header += "Content-Type: application/json; charset=utf-8\r\n";
-//     } else {
-//         response_header += "Content-Type: ";
-//         response_header += accept;
-//         response_header += "\r\n";
-//     }
-
-//     response_header += "Connection: ";
-//     response_header += (alive == true) ? "Keep-Alive" : "Close";
-//     response_header += "\r\n";
-
-//     if (canGzip && is_have_content) {
-//         std::vector<char> compressedBuffer;
-//         size_t compressedSize = 0;
-//         char* tempCompressed = nullptr;
-
-//         if (gzipCompress(buffer.data(), buffer.size(), tempCompressed, compressedSize)) {
-//             std::cout << "Gzip 压缩成功，压缩前大小: " << buffer.size() << ", 压缩后大小: " << compressedSize << std::endl;
-//             compressedBuffer.assign(tempCompressed, tempCompressed + compressedSize);
-//             delete[] tempCompressed;
-
-//             buffer = compressedBuffer;
-//             text_l = compressedSize;
-//             response_header += "Content-Encoding: gzip\r\n";
-//         } else {
-//             std::cerr << "Gzip 压缩失败，使用未压缩数据" << std::endl;
-//         }
-//     }
-
-//     if(is_file_send)
-//     {
-//         response_header += "Content-Length: ";
-//         response_header += std::to_string(text_l);
-//         response_header += "\r\n\r\n"; 
-//         std::copy(response_header.begin(), response_header.end(), buf);
-//     }
-//     else if(is_have_content)
-//     {
-//         response_header += "Content-Length: ";
-//         response_header += std::to_string(text_l);
-//         response_header += "\r\n\r\n";
-//         std::vector<char> response;
-//         response.insert(response.end(), response_header.begin(), response_header.end());
-//         response.insert(response.end(), buffer.begin(), buffer.end());
-//         std::copy(response.begin(), response.end(), buf);
-//     }
-//     else if(is_location)
-//     {
-//         response_header += "Location: ";
-//         response_header += location;
-//         response_header += "\r\n";
-//         response_header += "Content-Length: ";
-//         response_header += std::to_string(text_l);
-//         response_header += "\r\n\r\n";
-//         std::vector<char> response;
-//         response.insert(response.end(), response_header.begin(), response_header.end());
-//         std::copy(response.begin(), response.end(), buf);
-//     }
-//     else
-//     {
-//         const char* error_msg = "Your Request Error!!!";
-//         response_header += "Content-Length: ";
-//         response_header += std::to_string(strlen(error_msg));
-//         response_header += "\r\n\r\n";
-//         std::vector<char> response;
-//         response.insert(response.end(), response_header.begin(), response_header.end());
-//         response.insert(response.end(), error_msg, error_msg + strlen(error_msg));
-//         std::copy(response.begin(), response.end(), buf);
-//     }
-    
-    
-// }    
+  

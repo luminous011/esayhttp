@@ -70,6 +70,8 @@ bool connection_pool::registerUser(const std::string& username, const std::strin
 
     user_pass[username] = password; 
 
+    std::cout << "register success..................................." << std::endl;
+
     return true;
 }
 

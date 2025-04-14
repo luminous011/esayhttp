@@ -6,121 +6,244 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>欢迎主页</title>
     <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3a0ca3;
+            --success-color: #4cc9f0;
+            --danger-color: #f72585;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --text-color: #495057;
+            --border-radius: 12px;
+            --box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #f4f4f9 0%, #e0eafc 100%);
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
             padding: 20px;
+            color: var(--text-color);
+            line-height: 1.6;
         }
 
         .container {
             background-color: #fff;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
             text-align: center;
-            max-width: 800px;
+            max-width: 900px;
             width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
         }
 
         h1 {
-            color: #333;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-            font-size: 3em;
-            border-bottom: 2px solid #007BFF;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+            color: var(--dark-color);
+            font-size: 2.8rem;
+            margin-bottom: 1.5rem;
+            font-weight: 700;
+            position: relative;
+            display: inline-block;
         }
 
-        p {
-            color: #666;
-            font-size: 1.2em;
-            line-height: 1.6;
-            margin-bottom: 30px;
+        h1::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 4px;
+            background: var(--primary-color);
+            border-radius: 2px;
+        }
+
+        .subtitle {
+            color: var(--text-color);
+            font-size: 1.2rem;
+            margin-bottom: 2.5rem;
+            opacity: 0.9;
+        }
+
+        .btn-group {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 2.5rem;
         }
 
         .btn {
-            display: inline-block;
-            background-color: #007BFF;
-            color: #fff;
-            padding: 12px 25px;
-            border-radius: 5px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.8rem 1.8rem;
+            border-radius: 50px;
             text-decoration: none;
-            font-size: 1.1em;
-            transition: all 0.3s ease;
-            margin: 10px;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: var(--transition);
             border: none;
             cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
         }
 
         .btn:hover {
-            background-color: #0056b3;
-            transform: translateY(-2px);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(255, 255, 255, 0.2), transparent);
+            transition: var(--transition);
+        }
+
+        .btn:hover::after {
+            background: linear-gradient(rgba(255, 255, 255, 0.3), transparent);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
         }
 
         /* 文档查看器样式 */
         #docViewer {
             display: none;
-            margin-top: 30px;
+            margin-top: 2rem;
             text-align: left;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background-color: #f9f9f9;
+            padding: 2rem;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: var(--border-radius);
+            background-color: white;
             max-height: 500px;
             overflow-y: auto;
+            box-shadow: var(--box-shadow);
         }
 
-        #docViewer h1, #docViewer h2, #docViewer h3 {
-            color: #333;
-            margin-top: 20px;
+        #docViewer h1,
+        #docViewer h2,
+        #docViewer h3 {
+            color: var(--dark-color);
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
         }
 
         #docViewer pre {
             background-color: #f5f5f5;
-            padding: 10px;
-            border-radius: 3px;
+            padding: 1rem;
+            border-radius: 6px;
             overflow-x: auto;
+            margin: 1rem 0;
         }
 
         #docViewer code {
-            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            font-family: 'Consolas', 'Monaco', 'Andale Mono', monospace;
+            font-size: 0.9rem;
         }
 
         .close-btn {
-            float: right;
-            background: #dc3545;
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: var(--danger-color);
             color: white;
             border: none;
-            padding: 5px 10px;
-            border-radius: 3px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: var(--transition);
+        }
+
+        .close-btn:hover {
+            transform: rotate(90deg);
         }
 
         /* 视频播放器样式 */
         #videoPlayer {
             display: none;
-            margin-top: 30px;
+            margin-top: 2rem;
             width: 100%;
             max-width: 800px;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            box-shadow: var(--box-shadow);
         }
-        
+
         #videoElement {
             width: 100%;
-            border-radius: 5px;
+            display: block;
         }
 
         /* 文件上传区域样式 */
         #uploadSection {
-            margin-top: 20px;
-            padding: 20px;
-            border: 2px dashed #007BFF;
-            border-radius: 5px;
-            background-color: #f8f9fa;
+            margin-top: 2rem;
+            padding: 2rem;
+            border: 2px dashed rgba(67, 97, 238, 0.3);
+            border-radius: var(--border-radius);
+            background-color: rgba(248, 249, 250, 0.5);
+            transition: var(--transition);
+            position: relative;
+        }
+
+        #uploadSection:hover {
+            border-color: rgba(67, 97, 238, 0.6);
+            background-color: rgba(248, 249, 250, 0.8);
+        }
+
+        #uploadSection h3 {
+            color: var(--dark-color);
+            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
         }
 
         #fileInput {
@@ -128,45 +251,96 @@
         }
 
         #fileLabel {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #28a745;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.8rem 1.8rem;
+            background-color: var(--success-color);
             color: white;
-            border-radius: 5px;
+            border-radius: 50px;
             cursor: pointer;
-            margin-bottom: 10px;
+            margin-bottom: 1rem;
+            transition: var(--transition);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         #fileLabel:hover {
-            background-color: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        #fileLabel i {
+            margin-right: 8px;
         }
 
         #fileName {
-            margin-top: 10px;
-            color: #333;
+            margin-top: 1rem;
+            color: var(--text-color);
+            font-size: 0.9rem;
         }
 
         #uploadStatus {
-            margin-top: 10px;
-            color: #dc3545;
-            font-weight: bold;
+            margin-top: 1rem;
+            color: var(--danger-color);
+            font-weight: 500;
+            min-height: 1.5rem;
         }
 
         .progress-container {
             width: 100%;
-            background-color: #e9ecef;
+            height: 10px;
+            background-color: rgba(0, 0, 0, 0.05);
             border-radius: 5px;
-            margin-top: 10px;
+            margin-top: 1rem;
+            overflow: hidden;
             display: none;
         }
 
         #uploadProgress {
             width: 0%;
-            height: 20px;
-            background-color: #28a745;
+            height: 100%;
+            background: linear-gradient(90deg, var(--success-color), #2ec4b6);
             border-radius: 5px;
-            transition: width 0.3s;
+            transition: width 0.3s ease-out;
         }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 2rem 1.5rem;
+            }
+
+            h1 {
+                font-size: 2.2rem;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .btn-group {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 250px;
+            }
+        }
+
+        /* 动画效果 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .container {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        /* 图标字体 */
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
     </style>
     <!-- 引入Markdown解析库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -174,21 +348,23 @@
 
 <body>
     <div class="container">
-        <h1>Welcome to my 主页</h1>
-        <p>感谢您访问我的主页！在这里您可以发现更多有趣的内容。</p>
-        
-        <button id="downloadBtn" class="btn">下载文件</button>
-        <button id="viewDocBtn" class="btn">查看文档</button>
-        <button id="viewVideoBtn" class="btn">观看视频</button>
-        <a href="#" class="btn">了解更多</a>
-        
+        <h1>欢迎来到主页</h1>
+        <p class="subtitle">感谢您访问我的主页！在这里您可以发现更多有趣的内容和功能。</p>
+
+        <div class="btn-group">
+            <button id="downloadBtn" class="btn"><i class="fas fa-download"></i> 下载文件</button>
+            <button id="viewDocBtn" class="btn btn-secondary"><i class="fas fa-file-alt"></i> 查看文档</button>
+            <button id="viewVideoBtn" class="btn btn-success"><i class="fas fa-play"></i> 观看视频</button>
+            <a href="#" class="btn btn-danger"><i class="fas fa-info-circle"></i> 了解更多</a>
+        </div>
+
         <!-- 文件上传区域 -->
         <div id="uploadSection">
-            <h3>文件上传</h3>
+            <h3><i class="fas fa-cloud-upload-alt"></i> 文件上传</h3>
             <input type="file" id="fileInput">
-            <label for="fileInput" id="fileLabel">选择文件</label>
+            <label for="fileInput" id="fileLabel"><i class="fas fa-folder-open"></i> 选择文件</label>
             <div id="fileName">未选择文件</div>
-            <button id="uploadBtn" class="btn" style="background-color: #28a745;" disabled>上传文件</button>
+            <button id="uploadBtn" class="btn" style="background-color: var(--success-color);" disabled><i class="fas fa-upload"></i> 上传文件</button>
             <div id="uploadStatus"></div>
             <div class="progress-container" id="progressContainer">
                 <div id="uploadProgress"></div>
@@ -219,7 +395,7 @@
             const closeDocBtn = document.getElementById('closeDocBtn');
             const videoPlayer = document.getElementById('videoPlayer');
             const videoElement = document.getElementById('videoElement');
-            
+
             // 文件上传相关元素
             const fileInput = document.getElementById('fileInput');
             const fileLabel = document.getElementById('fileLabel');
@@ -231,24 +407,24 @@
 
             // 下载文件功能
             downloadBtn.addEventListener('click', function () {
-                fetch('http://192.168.29.133:39333/download',{
+                fetch('http://192.168.29.133:39333/download', {
                     credentials: 'include'
-                }) 
-                   .then(response => {
+                })
+                    .then(response => {
                         if (response.ok) {
-                            return response.blob(); 
+                            return response.blob();
                         }
                         throw new Error('网络请求失败');
                     })
-                   .then(blob => {
+                    .then(blob => {
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = 'star.png'; 
+                        a.download = 'star.png';
                         a.click();
                         window.URL.revokeObjectURL(url);
                     })
-                   .catch(error => {
+                    .catch(error => {
                         console.error('下载失败:', error);
                         alert('下载失败: ' + error.message);
                     });
@@ -256,7 +432,7 @@
 
             // 查看文档功能
             viewDocBtn.addEventListener('click', function () {
-                fetch('http://192.168.29.133:39333/document.md',{
+                fetch('http://192.168.29.133:39333/document.md', {
                     credentials: 'include'
                 })
                     .then(response => {
@@ -277,19 +453,19 @@
             });
 
             // 观看视频功能
-            viewVideoBtn.addEventListener('click', function() {
+            viewVideoBtn.addEventListener('click', function () {
                 // 隐藏文档查看器
                 docViewer.style.display = 'none';
-                
+
                 // 显示视频播放器
                 videoPlayer.style.display = 'block';
-                
+
                 // 设置视频源（假设服务端视频地址为/video）
                 videoElement.src = 'http://192.168.29.133:39333/video.mp4';
-                
+
                 // 加载视频
                 videoElement.load();
-                
+
                 // 尝试自动播放（注意：某些浏览器可能阻止自动播放）
                 videoElement.play().catch(e => {
                     console.log('自动播放被阻止，用户需要手动点击播放');
@@ -297,12 +473,12 @@
             });
 
             // 关闭文档查看器
-            closeDocBtn.addEventListener('click', function() {
+            closeDocBtn.addEventListener('click', function () {
                 docViewer.style.display = 'none';
             });
 
             // 文件选择处理
-            fileInput.addEventListener('change', function() {
+            fileInput.addEventListener('change', function () {
                 if (this.files && this.files[0]) {
                     fileName.textContent = `已选择: ${this.files[0].name} (${formatFileSize(this.files[0].size)})`;
                     uploadBtn.disabled = false;
@@ -314,13 +490,17 @@
             });
 
             // 文件上传功能
-            uploadBtn.addEventListener('click', function() {
-                if (!fileInput.files || fileInput.files.length === 0) {
-                    uploadStatus.textContent = '请先选择文件';
+            uploadBtn.addEventListener('click', function () {
+                if (!fileInput.files || fileInput.files.length === 0) return;
+
+                const file = fileInput.files[0];
+
+                // 文件大小限制（示例限制为50MB）
+                if (file.size > 50 * 1024 * 1024) {
+                    uploadStatus.textContent = "文件不能超过50MB";
                     return;
                 }
 
-                const file = fileInput.files[0];
                 const formData = new FormData();
                 formData.append('file', file);
 
@@ -332,49 +512,67 @@
 
                 const xhr = new XMLHttpRequest();
                 xhr.open('POST', 'http://192.168.29.133:39333/uploads', true);
+                xhr.timeout = 3600000; // 1小时超时
                 xhr.withCredentials = true;
 
-                // 上传进度事件
-                xhr.upload.onprogress = function(e) {
+                // 进度处理
+                let lastPercent = 0;
+                xhr.upload.onprogress = function (e) {
                     if (e.lengthComputable) {
-                        const percent = Math.round((e.loaded / e.total) * 100);
-                        uploadProgress.style.width = percent + '%';
+                        const current = Math.floor((e.loaded / e.total) * 100);
+                        if (current > lastPercent) {
+                            uploadProgress.style.width = current + '%';
+                            lastPercent = current;
+                        }
                     }
                 };
 
-                xhr.onload = function() {
+                xhr.onload = function () {
                     if (xhr.status === 200) {
                         uploadStatus.textContent = '上传成功!';
                         uploadStatus.style.color = '#28a745';
                         setTimeout(() => {
                             progressContainer.style.display = 'none';
-                            uploadBtn.disabled = false;
                             fileInput.value = '';
                             fileName.textContent = '未选择文件';
-                        }, 2000);
+                        }, 0);
                     } else {
-                        uploadStatus.textContent = '上传失败: ' + xhr.statusText;
-                        uploadStatus.style.color = '#dc3545';
-                        uploadBtn.disabled = false;
+                        handleUploadError(xhr.status);
                     }
+                    uploadBtn.disabled = false;
                 };
 
-                xhr.onerror = function() {
-                    uploadStatus.textContent = '上传出错，请检查网络连接';
+                xhr.ontimeout = function () {
+                    uploadStatus.textContent = '上传超时';
                     uploadStatus.style.color = '#dc3545';
+                    uploadBtn.disabled = false;
+                };
+
+                xhr.onerror = function () {
+                    handleUploadError(xhr.status);
                     uploadBtn.disabled = false;
                 };
 
                 xhr.send(formData);
             });
 
-            // 格式化文件大小
             function formatFileSize(bytes) {
                 if (bytes === 0) return '0 Bytes';
                 const k = 1024;
                 const sizes = ['Bytes', 'KB', 'MB', 'GB'];
                 const i = Math.floor(Math.log(bytes) / Math.log(k));
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            function handleUploadError(status) {
+                let errorMessage = '上传失败';
+                if (status === 413) {
+                    errorMessage = '文件太大';
+                } else if (status === 415) {
+                    errorMessage = '不支持的文件类型';
+                }
+                uploadStatus.textContent = errorMessage;
+                uploadStatus.style.color = '#dc3545';
             }
         });
     </script>

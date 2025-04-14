@@ -20,281 +20,14 @@
 #include <atomic>
 #include <csignal>
 #include <vector>
-#include <algorithm>
-#include <random>
-
 
 #include "log.h"
 #include "sqlconn.h"
 #include "http.h"
+#include "utils.h"
 
 using namespace std;
 
-#define BUFSIZE 8192
-#define CONSIZE 256
-const size_t MAX_UPLOAD_SIZE = 100 * 1024 * 1024;
-
-enum class STATUS{
-    prase_request = 0,
-    prase_header = 1,
-    prase_text = 2,
-    prase_done = 3,
-};
-
-class HttpMethod
-{
-    enum class METHOD
-    {
-        GET = 0,
-        POST = 1,
-        HEAD = 2,
-    };
-};
-
-std::atomic<bool> keep_alive(true);
-
-void handle_signal(int sig)
-{
-    if(sig == SIGUSR1)
-    {
-        keep_alive = !keep_alive;
-        std::string mode = (keep_alive)?("Keep_alive") : ("Close");
-        std::cout << "switch mode to "
-        << mode << std::endl;
-    }
-}
-
-void setNonblocking(int fd)
-{
-    int flags = fcntl(fd, F_GETFL);
-    flags |= O_NONBLOCK;
-    fcntl(fd, F_SETFL, flags);
-}
-
-class ClientConnection
-{
-public:
-    int fd;
-    char request[BUFSIZE];
-    char response_header[BUFSIZE];
-    size_t response_header_len;
-    size_t header_written;
-    std::string filename;
-    int file_fd;
-    off_t file_size;
-    off_t file_sent;
-
-    //bool is_file_recv;
-    //std::string file_recv_res;
-    bool is_header_sent;
-    bool is_file_sending;//send file
-
-    struct sockaddr_in addr;
-    //upload file
-    std::vector<char> dynamic_buf;
-    std::string upload_filename;
-    int upload_fd = -1;  // 改用文件描述符替代FILE*
-    size_t content_length = 0;
-    size_t received = 0;
-    bool upload_started = false;
-    std::string boundary;  // 用于multipart解析
-
-    // 安全追加数据
-    void append_data(const char* data, size_t len) {
-        if (dynamic_buf.size() + len > MAX_UPLOAD_SIZE) {
-            throw std::runtime_error("Upload size exceeded");
-        }
-        std::cout << "insert........." << std::endl;
-        dynamic_buf.insert(dynamic_buf.end(), data, data + len);
-        received += len;
-    }
-
-    // 检查是否收到完整头部
-    bool got_all_headers() {
-        const char* end = "\r\n\r\n";
-        auto it = std::search(dynamic_buf.begin(), dynamic_buf.end(), end, end + 4);
-        return it != dynamic_buf.end();
-    }
-
-    // 获取头部内容
-    std::string get_headers() {
-        auto it = std::search(dynamic_buf.begin(), dynamic_buf.end(), "\r\n\r\n", "\r\n\r\n" + 4);
-        return (it != dynamic_buf.end()) ? std::string(dynamic_buf.begin(), it) : "";
-    }
-
-    // 检查是否是上传请求
-    bool is_upload_request() {
-        std::string headers = get_headers();
-        std::transform(headers.begin(), headers.end(), headers.begin(), ::tolower);
-        return headers.find("Content-Type: multipart/form-data") != std::string::npos;
-    }
-
-    // 安全获取Content-Length
-    size_t get_content_length() {
-        std::string headers = get_headers();
-        size_t pos = headers.find("Content-Length:");
-        if (pos == std::string::npos) return 0;
-        
-        try {
-            return std::stoul(headers.substr(pos + 15));
-        } catch (...) {
-            return 0;
-        }
-    }
-
-    // 开始文件上传
-    void start_file_upload(const std::string& upload_dir) {
-        if (upload_started) return;
-        
-        // 获取内容长度
-        content_length = get_content_length();
-        if (content_length == 0 || content_length > MAX_UPLOAD_SIZE) {
-            throw std::runtime_error("Invalid content length");
-        }
-
-        // 创建上传目录
-        if (mkdir(upload_dir.c_str(), 0755) == -1 && errno != EEXIST) {
-            throw std::runtime_error("Failed to create upload directory");
-        }
-
-        // 解析boundary
-        std::string ct = get_header_value("Content-Type");
-        size_t bp = ct.find("boundary=");
-        if (bp == std::string::npos) {
-            throw std::runtime_error("Missing boundary in Content-Type");
-        }
-        boundary = "--" + ct.substr(bp + 9);
-
-        // 生成安全文件名
-        upload_filename = generate_safe_filename(upload_dir);
-        upload_fd = open(upload_filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (upload_fd == -1) {
-            throw std::runtime_error("Failed to open upload file");
-        }
-
-        upload_started = true;
-    }
-
-    // 处理上传数据
-    void process_upload_data() {
-        if (!upload_started || upload_fd == -1) return;
-
-        // 查找头部结束位置
-        auto header_end = std::search(dynamic_buf.begin(), dynamic_buf.end(), 
-                                    "\r\n\r\n", "\r\n\r\n" + 4);
-        if (header_end == dynamic_buf.end()) return;
-
-        // 查找文件数据结束boundary
-        auto file_end = std::search(header_end + 4, dynamic_buf.end(),
-                                  boundary.begin(), boundary.end());
-        if (file_end == dynamic_buf.end()) return;
-
-        // 写入文件数据
-        size_t data_start = header_end - dynamic_buf.begin() + 4;
-        size_t data_len = file_end - (dynamic_buf.begin() + data_start);
-        
-        if (data_len > 0) {
-            ssize_t written = write(upload_fd, &dynamic_buf[data_start], data_len);
-            if (written != static_cast<ssize_t>(data_len)) {
-                throw std::runtime_error("File write error");
-            }
-        }
-
-        // 移除已处理数据
-        dynamic_buf.erase(dynamic_buf.begin(), file_end + boundary.size());
-    }
-
-    // 完成上传
-    void finish_upload() {
-        if (upload_fd != -1) {
-            close(upload_fd);
-            upload_fd = -1;
-        }
-        upload_started = false;
-    }
-
-private:
-    // 生成安全文件名
-    std::string generate_safe_filename(const std::string& dir) {
-        static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, sizeof(alphanum) - 2);
-
-        std::string filename = dir + "upload_";
-        for (int i = 0; i < 16; ++i) {
-            filename += alphanum[dis(gen)];
-        }
-        
-        // 从Content-Disposition获取原始扩展名
-        std::string cd = get_header_value("Content-Disposition");
-        size_t fn_pos = cd.find("filename=");
-        if (fn_pos != std::string::npos) {
-            std::string orig_fn = cd.substr(fn_pos + 9);
-            orig_fn = orig_fn.substr(orig_fn.find_last_of("."));
-            if (!orig_fn.empty() && orig_fn.find_first_of("\\/:*?\"<>|") == std::string::npos) {
-                filename += orig_fn;
-            }
-        }
-        
-        return filename;
-    }
-
-    // 获取头部字段值
-    std::string get_header_value(const std::string& name) {
-        std::string headers = get_headers();
-        std::string lower_name = name;
-        std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
-        
-        size_t pos = 0;
-        while ((pos = headers.find("\r\n", pos)) != std::string::npos) {
-            std::string line = headers.substr(pos + 2, headers.find("\r\n", pos + 2) - (pos + 2));
-            size_t colon = line.find(":");
-            if (colon != std::string::npos) {
-                std::string header_name = line.substr(0, colon);
-                std::transform(header_name.begin(), header_name.end(), header_name.begin(), ::tolower);
-                
-                if (header_name == lower_name) {
-                    std::string value = line.substr(colon + 1);
-                    value.erase(0, value.find_first_not_of(" \t"));
-                    value.erase(value.find_last_not_of(" \t") + 1);
-                    return value;
-                }
-            }
-            pos = headers.find("\r\n", pos + 2);
-        }
-        return "";
-    }
-};
-
-void handle_request(ClientConnection& conn, bool keep_alive)
-{
-    HTTP http;
-    memset(conn.response_header, 0, sizeof(conn.response_header));
-    http.prase(conn.request);
-    http.prase_all();
-    http.prase_url();
-    http.return_res(conn.response_header, conn.filename, keep_alive);
-    conn.response_header_len = strlen(conn.response_header);
-    conn.header_written = 0;
-    conn.is_header_sent = false;
-    if(conn.filename == "")
-        return;
-    conn.file_fd = open(conn.filename.c_str(), O_RDONLY);
-    if(conn.file_fd >= 0)
-    {
-        struct stat file_stat;
-        fstat(conn.file_fd, &file_stat);
-        conn.file_size = file_stat.st_size;
-        conn.file_sent = 0;
-        conn.is_file_sending = true;
-    }
-    else
-    {
-        conn.is_file_sending = false;
-        std::cout << "cannot open file" << conn.filename << std::endl;
-    }
-}
 
 int main()
 {
@@ -309,7 +42,7 @@ int main()
     }
 
 
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int  sockfd = socket(AF_INET, SOCK_STREAM, 0);
     int opt = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
         std::cout << "Setsockopt failed" << std::endl;
@@ -354,14 +87,14 @@ int main()
     std::cout << "listen......." << std::endl;
 
     string user = "debian-sys-maint";
-    string passwd = "2uKHg0CLgDPDTsN7";
+    string passwd = "DHiZn6lRjee4emT0";
     string databasename = "yourdb";
     connection_pool* sql = connection_pool::GetInstance();
     sql->init("localhost", user, passwd, databasename, 3306);
     map<string, string> users = sql->getUser();
 
     ClientConnection connections[CONSIZE];
-    memset(connections, 0, sizeof(connections));
+    //memset(connections, 0, sizeof(connections));
     Log::getInstance()->setFilename("log.txt");
     while(true)
     {
@@ -386,8 +119,10 @@ int main()
 
                 for (int j = 0; j < CONSIZE; j++) {
                     if (connections[j].fd == 0) {
+                        connections[j].reset();
                         connections[j].fd = connfd;
                         connections[j].addr = cliaddr;
+                        connections[j].upload_state = ClientConnection::UploadState::NOT_UPLOADING; // 新增初始化
                         break;
                     }
                 }
@@ -398,122 +133,145 @@ int main()
                 ev.events = EPOLLIN | EPOLLOUT;
                 epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev);
             }
-            else if(events[i].events & EPOLLIN)//read
+            else if (events[i].events & EPOLLIN) // read
             {
                 std::cout << "begin read" << std::endl;
                 int fd = events[i].data.fd;
-                if(fd < 0)
+                if (fd < 0)
                     continue;
-                memset(buf, 0, BUFSIZE);
-                ssize_t has_read = read(fd, buf, BUFSIZE-1);
 
-                buf[has_read] = '\0';
-                std::cout << buf << std::endl;
-                if(has_read <= 0)
+                ClientConnection *conn = nullptr;
+                for (int j = 0; j < CONSIZE; j++)
                 {
-                    close(fd);
-                    events[i].data.fd = -1;
-                    for(int j = 0; j < CONSIZE; j++)
-                    {
-                        if(connections[j].fd == fd)
-                        {
-                            connections[j].finish_upload();
-                            connections[j] = ClientConnection();//delete error fd
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    int j = 0;
-                    for(j ; j < CONSIZE; j++)//store this fd's read
-                    {
-                        if(connections[j].fd == fd) break;
-                    }
-                    ClientConnection& conn = connections[j];
-                    conn.append_data(buf, has_read);
-
-                    if(conn.got_all_headers())
-                    {
-                        std::cout << "Recived " << std::endl;
-                        std::cout << "Headers: \n" << conn.get_headers() << std::endl;
-
-
-                        if(conn.is_upload_request())
-                        {
-                            std::cout << "recv file................." << std::endl;
-                            if(!conn.upload_started)
-                                conn.start_file_upload("uploads/");
-
-                            conn.process_upload_data();
-
-                            if(conn.received >= conn.content_length)
-                            {
-                                conn.finish_upload();
-                                //conn.is_file_recv = true;
-                                //conn.file_recv_res = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-                            }
-                            else
-                            {
-                                ev.data.fd = fd;
-                                ev.events = EPOLLIN | EPOLLET;
-                                epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
-                            }
-                        }
-                        else
-                        {
-                            std::cout << "begin parse" << std::endl;
-                            strncpy(connections[j].request, buf, has_read);
-                            char ip_str[INET_ADDRSTRLEN];
-                            inet_ntop(AF_INET, &(connections[j].addr.sin_addr), ip_str, INET_ADDRSTRLEN);
-                            LOG(ip_str, std::to_string(ntohs(connections[j].addr.sin_port)), 
-                            connections[j].get_headers().c_str(), nullptr, 0);
-                            
-                            handle_request(connections[j], keep_alive);
-                            
-                            // 准备写入响应
-                            ev.data.fd = fd;
-                            ev.events = EPOLLOUT | EPOLLET;
-                            epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
-                        }
-                    }
-                    else
-                    {
-                        ev.data.fd = fd;
-                        ev.events = EPOLLIN | EPOLLET;
-                        epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
-                    }
-                    
-                }
-            }
-            else if(events[i].events & EPOLLOUT)
-            {
-                int fd = events[i].data.fd;
-                if(fd < 0)
-                    continue;
-                
-                ClientConnection* conn = nullptr;
-                for(int j = 0; j < CONSIZE; j++)
-                {
-                    if(connections[j].fd == fd)
+                    if (connections[j].fd == fd)
                     {
                         conn = &connections[j];
-                        //std::cout << "bind suc" << std::endl;
                         break;
                     }
                 }
-                
-                if(conn)
+                if (!conn)
                 {
-                    if(!conn->is_header_sent)//header
+                    close(fd);
+                    continue;
+                }
+
+                char buffer[BUFSIZE];
+                bool is_upload_request = false;
+
+                while (true)
+                {
+                    ssize_t bytes_read = read(fd, buffer, BUFSIZE - 1);
+                    if (bytes_read > 0)
+                    {
+                        // 检测是否为上传请求
+                        if (conn->upload_state == ClientConnection::UploadState::NOT_UPLOADING)
+                        {
+                            if (strstr(buffer, "POST /uploads") && strstr(buffer, "multipart/form-data"))
+                            {
+                                is_upload_request = true;
+
+                                // 初始化上传参数
+                                conn->upload_content_length = get_content_length(buffer);
+                                conn->upload_boundary = get_boundary(buffer);
+                                conn->upload_filename = "uploads/" + sanitize_filename(get_upload_file_name(buffer));
+
+                                // 创建目录
+                                mkdir("uploads", 0755);
+
+                                // 打开文件流
+                                conn->upload_file.open(conn->upload_filename, std::ios::binary | std::ios::trunc);
+                                if (!conn->upload_file)
+                                {
+                                    std::cerr << "无法打开文件: " << conn->upload_filename << std::endl;
+                                    conn->reset();
+                                    close(fd);
+                                    break;
+                                }
+
+                                // 定位正文起始
+                                const char *body_start = find_body_start(buffer, bytes_read);
+                                if (body_start)
+                                {
+                                    size_t header_len = body_start - buffer;
+                                    size_t data_size = bytes_read - header_len;
+                                    conn->upload_file.write(body_start, data_size);
+                                    conn->upload_received = data_size;
+                                    conn->upload_state = ClientConnection::UploadState::READING_CONTENT;
+                                }
+                                else
+                                {
+                                    conn->upload_state = ClientConnection::UploadState::READING_HEADERS;
+                                    conn->upload_buffer.assign(buffer, buffer + bytes_read);
+                                }
+                            }
+                            else
+                            {
+                                // 处理普通请求
+                                strncpy(conn->request, buffer, bytes_read);
+                                handle_request(*conn, keep_alive);
+                                char ip_str[INET_ADDRSTRLEN];
+                                inet_ntop(AF_INET, &(conn->addr.sin_addr), ip_str, INET_ADDRSTRLEN);
+                                LOG(ip_str, std::to_string(ntohs(conn->addr.sin_port)), conn->request, nullptr, 0);
+                                struct epoll_event ev;
+                                ev.data.fd = fd;
+                                ev.events = EPOLLOUT | EPOLLET;
+                                epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
+                            }
+                        }
+                        else if (is_upload_request)
+                        {
+                            // 处理上传数据块
+                            process_upload_data(conn, buffer, bytes_read, epfd);
+                            
+                        }
+                    }
+                    else if (bytes_read == 0)
+                    {
+                        conn->reset();
+                        close(fd);
+                        epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
+                        break;
+                    }
+                    else
+                    {
+                        if (errno == EAGAIN)
+                            break;
+                        perror("read error");
+                        conn->reset();
+                        close(fd);
+                        epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
+                        break;
+                    }
+                }
+            }
+            else if (events[i].events & EPOLLOUT)
+            {
+                int fd = events[i].data.fd;
+                if (fd < 0)
+                    continue;
+
+                ClientConnection *conn = nullptr;
+                for (int j = 0; j < CONSIZE; j++)
+                {
+                    if (connections[j].fd == fd)
+                    {
+                        conn = &connections[j];
+                        // std::cout << "bind suc" << std::endl;
+                        break;
+                    }
+                }
+
+                if (conn)
+                {
+                    if (!conn->is_header_sent) // header
                     {
                         ssize_t has_w = write(fd, conn->response_header + conn->header_written, conn->response_header_len - conn->header_written);
-                        if(has_w > 0)
+                        if (has_w > 0)
                         {
                             conn->header_written += has_w;
-                            if(conn->header_written == conn->response_header_len)
+                            if (conn->header_written == conn->response_header_len)
                             {
-                                //LOG(conn->ip, conn->port, nullptr, conn->response_header, 1);
+                                // LOG(conn->ip, conn->port, nullptr, conn->response_header, 1);
                                 conn->is_header_sent = true;
                                 char ip_str[INET_ADDRSTRLEN];
                                 std::cout << "write" << std::endl;
@@ -524,9 +282,9 @@ int main()
                                 LOG(ip_str, std::to_string(ntohs(cliaddr.sin_port)), nullptr, conn->response_header, 1);
                             }
                         }
-                        else if(has_w < 0)
+                        else if (has_w < 0)
                         {
-                            if(errno == EAGAIN || errno == EWOULDBLOCK)
+                            if (errno == EAGAIN || errno == EWOULDBLOCK)
                             {
                                 continue;
                             }
@@ -537,27 +295,27 @@ int main()
                             }
                         }
                     }
-                    if(conn->is_header_sent && conn->is_file_sending)
+                    if (conn->is_header_sent && conn->is_file_sending)
                     {
                         off_t offset = conn->file_sent;
                         ssize_t sent = sendfile(fd, conn->file_fd, &offset, conn->file_size - conn->file_sent);
-                        if(sent > 0)
+                        if (sent > 0)
                         {
                             conn->file_sent += sent;
-                            if(conn->file_sent == conn->file_size)
+                            if (conn->file_sent == conn->file_size)
                             {
                                 conn->is_file_sending = false;
                                 close(conn->file_fd);
                                 std::cout << "file send success: " << conn->filename << std::endl;
-                               
+                                conn->reset();
                                 ev.data.fd = fd;
-                                ev.events = EPOLLIN | EPOLLET;
+                                ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                                 epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
                             }
                         }
-                        else if(sent < 0)
+                        else if (sent < 0)
                         {
-                            if(errno == EAGAIN || errno == EWOULDBLOCK)
+                            if (errno == EAGAIN || errno == EWOULDBLOCK)
                             {
                                 ev.events = EPOLLOUT | EPOLLET;
                                 epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
@@ -570,20 +328,17 @@ int main()
                                 close(conn->file_fd);
                             }
                         }
-                    }//send success;
-
-
+                    } // send success;
                 }
                 else
                 {
                     close(fd);
                     events[i].data.fd = -1;
-                    for(int j = 0; j < CONSIZE; j++)
+                    for (int j = 0; j < CONSIZE; j++)
                     {
-                        if(connections[j].fd == fd)
+                        if (connections[j].fd == fd)
                         {
-                            connections[j] = ClientConnection();
-                            
+                            connections[j].fd = 0;
                             break;
                         }
                     }
@@ -592,7 +347,9 @@ int main()
         }
     }
 
-    delete buf;
+    for (auto &conn : connections)
+        conn.reset();
+    delete[] buf;
     close(epfd);
 
     return 0;
